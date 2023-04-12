@@ -2,6 +2,8 @@ library(TSA)
 library(npreg)
 library(forecast)
 library(stats)
+library(fracdiff)
+library(tseriesChaos)
 
 ######
 #periodicity
@@ -137,4 +139,65 @@ Trend_seasonality_measure <- function(ts_data, lambda = "auto"){
 ####
 #serial corelation
 ####
+Box_Pierce_stats <- function(ts_data){
+  #value of stattistic for RAW data
+  Box_Pierce_RAW <- Box.test(ts_data, lag = 20)$statistic
+  #TSA data using stl(when freq > 1) or ss(when freq = 1)
+  freq <- find_seasonality(ts_data = ts_data)
+  if (freq > 1){
+    stl_ts <- stl_decomp(ts_data = ts_data, freq=freq)
+    R_t <- ts_data - stl_ts$trend - stl_ts$seasonal
+  }
+  else if (freq == 1){
+    ss_ts_trend <- ss(ts_data, nknots = 3)$y
+    R_t <- ts_data - ss_ts_trend
+  }
+  Box_Pierce_TSA <- Box.test(R_t, lag = 20)$statistic
+  
+  return(list(Box_Pierce_RAW = Box_Pierce_RAW, Box_Pierce_TSA = Box_Pierce_TSA))
+}
 
+#Box_Pierce_stats(AirPassengers)
+
+####
+#Non-linear AR structure
+####
+#Tsay.test()
+
+####
+#Skewness
+####
+#gotowa funkcja z pakietu TSA
+TSA::skewness(ts_data)
+#ze wzoru z artykułu characteristic-based...
+skewness_manual <- function(ts_data){
+  skewness <- 1/(length(ts_data)*sd(ts_data)^3)*sum((ts_data-mean(ts_data))^3)
+  return(skewness=skewness)
+}
+
+####
+#Kurtosis (heavy-tails)
+####
+#gotowa funkcja z pakietu TSA
+TSA::kurtosis(ts_data)
+kurtosis_manual <- function(ts_data){
+  kurtosis <- 1/(length(ts_data)*sd(ts_data)^4)*sum((ts_data-mean(ts_data))^4)-3
+  return(kurtosis = kurtosis)
+}
+
+####
+#self-dependency
+####
+self_similarity <- function(ts_data){
+  d <- fracdiff(ts_data)$d
+  Hurst <- d + 0.5
+  return(Hurst=Hurst)
+}
+self_similarity(AirPassengers)
+
+####
+#chaos (dynamic systems)
+####
+output <-lyap_k(AirPassengers, m=1, d=2, s=10, t=10, ref=100, k=2, eps=4)
+plot(output)
+lyap(output, 0.2, 0.4)
