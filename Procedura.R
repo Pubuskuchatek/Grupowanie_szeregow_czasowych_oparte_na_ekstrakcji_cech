@@ -1,20 +1,22 @@
 library(class)
 library(clv)
 library(FactoMineR)
+
 ###
 #Procedura
 ###
+
 Procedura_grupowania <- function(train, test, train_class, test_class, k, method = "all",
                                  hclust_method = "complete", B=100, min_var=0.7,
                                  grid_dim = c(6,6), topo = "hexagonal", subset=0.7,
-                                 discrete = TRUE){
-  #macierz odległości (euklidesowa oraz acf) do grupowania metodami referencyjnymi
+                                 discrete = TRUE, nstart = 1){
+  #macierz odległości (euklidesowa oraz acf)
   eucl_dist_matrix <- dist(test, diag = TRUE, upper = TRUE)
   acf_dist_matrix <- acf_dist(test)
   
-  #grupowanie metodami referencyjnymi
+  #grupowanie metodami na podstawie odległości eukldesowej i ACF
   #euklidesowa
-  kmean_eucl_ref <- kmeans(test, centers = k)
+  kmean_eucl_ref <- kmeans(test, centers = k, nstart = nstart)
   pam_eucl_ref <- pam(eucl_dist_matrix, k = k, metric = "euclidean")
   hclust_eucl_ref <- hclust(eucl_dist_matrix, method = hclust_method)
   hclust_eucl_ref_clust <- cutree(hclust_eucl_ref, k=k)
@@ -35,12 +37,11 @@ Procedura_grupowania <- function(train, test, train_class, test_class, k, method
   print(l)
   test_row <- nrow(test)
   #acf
-  pam_acf_ref <- pam(acf_dist_matrix, k = k, metric = "euclidean")
+  pam_acf_ref <- pam(acf_dist_matrix, k = k, diss = TRUE)
   hclust_acf_ref <- hclust(as.dist(acf_dist_matrix), method = hclust_method)
   hclust_acf_ref_clust <- cutree(hclust_acf_ref, k=k)  
-  print("grupowanie metodami ref ok")
   
-  #ocena metod referencyjnych
+  #ocena metod opartych na odległości euklidesowej i ACF
   #accuracy
   kmean_eucl_ref_acc <- compareMatchedClasses(kmean_eucl_ref$cluster, test_class, method = "exact", verbose = FALSE)$diag
   pam_eucl_ref_acc <- compareMatchedClasses(pam_eucl_ref$clustering, test_class, method = "exact", verbose = FALSE)$diag
@@ -89,13 +90,13 @@ Procedura_grupowania <- function(train, test, train_class, test_class, k, method
                                     noisetuning = c(0,0), count = FALSE, clustermethod = claraCBI, k=k, seed = 249730)$subsetmean)
   hclust_eucl_stab <- mean(clusterboot(test, B=B, bootmethod = "subset", subtuning = floor(subset*nrow(test)),
                                       noisetuning = c(0,0), count = FALSE, clustermethod = hclustCBI, 
-                                      method=hclust_method, k=k, seed = 249730)$subsetmean)
+                                      method=hclust_method, k=k, scaling=FALSE, seed = 249730)$subsetmean)
   
   pam_acf_stab <- mean(clusterboot(as.dist(acf_dist_matrix), B=B, bootmethod = "subset", subtuning = floor(subset*nrow(test)),
                                     noisetuning = c(0,0), count = FALSE, clustermethod = claraCBI, k=k, seed = 249730)$subsetmean)
   hclust_acf_stab <- mean(clusterboot(as.dist(acf_dist_matrix), B=B, bootmethod = "subset", subtuning = floor(subset*nrow(test)),
                                        noisetuning = c(0,0), count = FALSE, clustermethod = hclustCBI, 
-                                       method=hclust_method, k=k, seed = 249730)$subsetmean)
+                                       method=hclust_method, k=k, scaling=FALSE, seed = 249730)$subsetmean)
   
   #tabelka
   wskazniki_eucl_ref <- c(kmean_eucl_ref_acc, kmean_eucl_conn, kmean_eucl_silh, kmean_eucl_stab,
@@ -122,20 +123,23 @@ Procedura_grupowania <- function(train, test, train_class, test_class, k, method
   test_meas_raw <- test_meas[,1:9]
   test_meas_tsa <- test_meas[,10:13]
   #usuwamy kolumny z mniejsza liczbą unikalnych wartości niz liczba klastrow k
-  train_meas <- train_meas[, unique_values(train_meas, k=k)]
-  test_meas <- test_meas[, unique_values(test_meas, k=k)]
+  col_ind <- get_unique(train_meas, test_meas, k=k)
+  col_ind_raw <- get_unique(train_meas_raw, test_meas_raw, k=k)
+  col_ind_tsa <- get_unique(train_meas_tsa, test_meas_tsa, k=k)
+  train_meas <- train_meas[, col_ind]
+  test_meas <- test_meas[, col_ind]
   
-  train_meas_raw <- train_meas_raw[, unique_values(train_meas_raw, k=k)]
-  train_meas_tsa <- train_meas_tsa[, unique_values(train_meas_tsa, k=k)]
-  test_meas_raw <- test_meas_raw[, unique_values(test_meas_raw, k=k)]
-  test_meas_tsa <- test_meas_tsa[, unique_values(test_meas_tsa, k=k)]
+  train_meas_raw <- train_meas_raw[, col_ind_raw]
+  train_meas_tsa <- train_meas_tsa[, col_ind_tsa]
+  test_meas_raw <- test_meas_raw[, col_ind_raw]
+  test_meas_tsa <- test_meas_tsa[, col_ind_tsa]
   
   #grupowanie oparte na ekstrakcji cech
   #macierz odległości do grupowania metodami 
   #opartymi na ekstrakcji cech
   eucl_dist_meas_matrix <- dist(test_meas, diag = TRUE, upper = TRUE)
   #wszystkie cechy
-  kmean_eucl_char <- kmeans(test_meas, centers = k)
+  kmean_eucl_char <- kmeans(test_meas, centers = k, nstart = nstart)
   pam_eucl_char <- pam(eucl_dist_meas_matrix, k = k, metric = "euclidean")
   hclust_eucl_char <- hclust(eucl_dist_meas_matrix, method = hclust_method)
   hclust_eucl_char_clust <- cutree(hclust_eucl_char, k=k)
@@ -151,8 +155,6 @@ Procedura_grupowania <- function(train, test, train_class, test_class, k, method
   som_tab_char_permut <- matchClasses(som_tab_char, method = "exact", verbose = FALSE)
   which.na <- c(attr(na.omit(as.integer(som_pred_char$predictions[["class"]])),"na.action"))
   l <- length(which.na)
-  print(which.na)
-  print(l)
   
   #ocena metod opartych na ekstrakcji cech (wszystkie cechy)
   #accuracy
@@ -194,28 +196,27 @@ Procedura_grupowania <- function(train, test, train_class, test_class, k, method
                                     noisetuning = c(0,0), count = FALSE, clustermethod = claraCBI, k=k, seed = 249730)$subsetmean)
   hclust_char_stab <- mean(clusterboot(test_meas, B=B, bootmethod = "subset", subtuning = floor(subset*nrow(test_meas)),
                                        noisetuning = c(0,0), count = FALSE, clustermethod = hclustCBI, 
-                                       method=hclust_method, k=k, seed = 249730)$subsetmean)
-  print("oceny po ekstrakcji")
+                                       method=hclust_method, k=k, scaling=FALSE, seed = 249730)$subsetmean)
   
   #tabelka
   wskazniki_eucl_char <- c(kmean_eucl_char_acc, kmean_eucl_conn_char, kmean_eucl_silh_char, kmean_char_stab,
                           pam_eucl_char_acc, pam_eucl_conn_char, pam_eucl_silh_char, pam_char_stab,
                           hclust_eucl_char_acc, hclust_eucl_conn_char, hclust_eucl_silh_char, hclust_char_stab,
                           som_char_acc, som_char_conn, som_char_silh, NA)
-
   table_eucl_char_method <- as.data.frame(matrix(wskazniki_eucl_char, nrow = 4, ncol = 4, byrow = TRUE))
   colnames(table_eucl_char_method) <- c("Accuracy", "Connectivity", "Silhouette", "Stability")
   rownames(table_eucl_char_method) <- c("Kmeans", "PAM", "Hclust", "SOM")
   
-  #grupowanie oparte na ekstrakcji cech (wybor zmiennych metoda ładunków PCA)
-  #macierz odległości do grupowania metodami 
+  #grupowanie oparte na ekstrakcji cech (wybor zmiennych metoda PCA)
+  #macierz odległości (euklidesowa oraz acf) do grupowania metodami 
   #opartymi na ekstrakcji cech (PCA)
   #pca
   pca_ind <- pca_select_features(test_meas, min_var_explained = min_var)
   pca_names <- names(test_meas[,pca_ind])
   #
   eucl_dist_pca_matrix <- dist(test_meas[,pca_ind], diag = TRUE, upper = TRUE)
-  kmean_eucl_pca <- kmeans(test_meas[,pca_ind], centers = k)
+
+  kmean_eucl_pca <- kmeans(test_meas[,pca_ind], centers = k, nstart = nstart)
   pam_eucl_pca <- pam(eucl_dist_pca_matrix, k = k, metric = "euclidean")
   hclust_eucl_pca <- hclust(eucl_dist_pca_matrix, method = hclust_method)
   hclust_eucl_pca_clust <- cutree(hclust_eucl_pca, k=k)
@@ -231,9 +232,8 @@ Procedura_grupowania <- function(train, test, train_class, test_class, k, method
   som_tab_pca_permut <- matchClasses(som_tab_pca, method = "exact", verbose = FALSE)
   which.na <- c(attr(na.omit(as.integer(som_pred_pca$predictions[["class"]])),"na.action"))
   l <- length(which.na)
-  print(which.na)
-  print(l)
-  #ocena metod opartych na ekstrakcji cech (cechy wybrane metodą ładunków PCA)
+  #ocena metod opartych na ekstrakcji cech (cechy wybrane metodą PCA)
+  #wybór zmiennych metodą PCA
   #accuracy
   kmean_eucl_pca_acc <- compareMatchedClasses(kmean_eucl_pca$cluster, test_class, method = "exact", verbose = FALSE)$diag
   pam_eucl_pca_acc <- compareMatchedClasses(pam_eucl_pca$clustering, test_class, method = "exact", verbose = FALSE)$diag
@@ -272,14 +272,13 @@ Procedura_grupowania <- function(train, test, train_class, test_class, k, method
                                     noisetuning = c(0,0), count = FALSE, clustermethod = claraCBI, k=k, seed = 249730)$subsetmean)
   hclust_pca_stab <- mean(clusterboot(test_meas[,pca_ind], B=B, bootmethod = "subset", subtuning = floor(subset*nrow(test_meas)),
                                        noisetuning = c(0,0), count = FALSE, clustermethod = hclustCBI, 
-                                       method=hclust_method, k=k, seed = 249730)$subsetmean)
+                                       method=hclust_method, k=k, scaling=FALSE, seed = 249730)$subsetmean)
   
   #tabelka
   wskazniki_eucl_pca <- c(kmean_eucl_pca_acc, kmean_eucl_conn_pca, kmean_eucl_silh_pca, kmean_pca_stab,
                            pam_eucl_pca_acc, pam_eucl_conn_pca, pam_eucl_silh_pca, pam_pca_stab,
                            hclust_eucl_pca_acc, hclust_eucl_conn_pca, hclust_eucl_silh_pca, hclust_pca_stab,
                           som_pca_acc, som_pca_conn, som_pca_silh, NA)
-
   table_eucl_pca_method <- as.data.frame(matrix(wskazniki_eucl_pca, nrow = 4, ncol = 4, byrow = TRUE))
   colnames(table_eucl_pca_method) <- c("Accuracy", "Connectivity", "Silhouette", "Stability")
   rownames(table_eucl_pca_method) <- c("Kmeans", "PAM", "Hclust", "SOM")
@@ -287,7 +286,7 @@ Procedura_grupowania <- function(train, test, train_class, test_class, k, method
   #grupowanie po ekstrakcji cech wylacznie na cechach z danych RAW
   eucl_dist_raw_matrix <- dist(test_meas_raw, diag = TRUE, upper = TRUE)
 
-  kmean_eucl_raw <- kmeans(test_meas_raw, centers = k)
+  kmean_eucl_raw <- kmeans(test_meas_raw, centers = k, nstart = nstart)
   pam_eucl_raw <- pam(eucl_dist_raw_matrix, k = k, metric = "euclidean")
   hclust_eucl_raw <- hclust(eucl_dist_raw_matrix, method = hclust_method)
   hclust_eucl_raw_clust <- cutree(hclust_eucl_raw, k=k)
@@ -303,13 +302,12 @@ Procedura_grupowania <- function(train, test, train_class, test_class, k, method
   som_tab_raw_permut <- matchClasses(som_tab_raw, method = "exact", verbose = FALSE)
   which.na <- c(attr(na.omit(as.integer(som_pred_raw$predictions[["class"]])),"na.action"))
   l <- length(which.na)
-  print(which.na)
-  print(l)
   #ocena metod opartych na ekstrakcji cech (cechy RAW)
   #accuracy
   kmean_eucl_raw_acc <- compareMatchedClasses(kmean_eucl_raw$cluster, test_class, method = "exact", verbose = FALSE)$diag
   pam_eucl_raw_acc <- compareMatchedClasses(pam_eucl_raw$clustering, test_class, method = "exact", verbose = FALSE)$diag
   hclust_eucl_raw_acc <- compareMatchedClasses(hclust_eucl_raw_clust, test_class, method = "exact",verbose = FALSE)$diag
+  #som_raw_acc <- classAgreement(som_tab_raw[,som_tab_raw_permut])$diag
   som_raw_acc <- sum(diag(som_tab_raw[,som_tab_raw_permut]))/test_row
 
   #spójność (connectivity)
@@ -345,22 +343,21 @@ Procedura_grupowania <- function(train, test, train_class, test_class, k, method
                                    noisetuning = c(0,0), count = FALSE, clustermethod = claraCBI, k=k, seed = 249730)$subsetmean)
   hclust_raw_stab <- mean(clusterboot(test_meas_raw, B=B, bootmethod = "subset", subtuning = floor(subset*nrow(test_meas)),
                                       noisetuning = c(0,0), count = FALSE, clustermethod = hclustCBI, 
-                                      method=hclust_method, k=k, seed = 249730)$subsetmean)
+                                      method=hclust_method, k=k, scaling=FALSE, seed = 249730)$subsetmean)
   
   #tabelka
   wskazniki_eucl_raw <- c(kmean_eucl_raw_acc, kmean_eucl_conn_raw, kmean_eucl_silh_raw, kmean_raw_stab,
                           pam_eucl_raw_acc, pam_eucl_conn_raw, pam_eucl_silh_raw, pam_raw_stab,
                           hclust_eucl_raw_acc, hclust_eucl_conn_raw, hclust_eucl_silh_raw, hclust_raw_stab,
                           som_raw_acc, som_raw_conn, som_raw_silh, NA)
-
   table_eucl_raw_method <- as.data.frame(matrix(wskazniki_eucl_raw, nrow = 4, ncol = 4, byrow = TRUE))
   colnames(table_eucl_raw_method) <- c("Accuracy", "Connectivity", "Silhouette", "Stability")
   rownames(table_eucl_raw_method) <- c("Kmeans", "PAM", "Hclust", "SOM")
   
   #grupowanie po ekstrakcji cech wylacznie na cechach z danych TSA
   eucl_dist_tsa_matrix <- dist(test_meas_tsa, diag = TRUE, upper = TRUE)
-  
-  kmean_eucl_tsa <- kmeans(test_meas_tsa, centers = k)
+  #
+  kmean_eucl_tsa <- kmeans(test_meas_tsa, centers = k, nstart = nstart)
   pam_eucl_tsa <- pam(eucl_dist_tsa_matrix, k = k, metric = "euclidean")
   hclust_eucl_tsa <- hclust(eucl_dist_tsa_matrix, method = hclust_method)
   hclust_eucl_tsa_clust <- cutree(hclust_eucl_tsa, k=k)
@@ -376,8 +373,6 @@ Procedura_grupowania <- function(train, test, train_class, test_class, k, method
   som_tab_tsa_permut <- matchClasses(som_tab_tsa, method = "exact", verbose = FALSE)
   which.na <- c(attr(na.omit(as.integer(som_pred_tsa$predictions[["class"]])),"na.action"))
   l <- length(which.na)
-  print(which.na)
-  print(l)
   #ocena metod opartych na ekstrakcji cech (cechy TSA)
   #accuracy
   kmean_eucl_tsa_acc <- compareMatchedClasses(kmean_eucl_tsa$cluster, test_class, method = "exact", verbose = FALSE)$diag
@@ -418,14 +413,13 @@ Procedura_grupowania <- function(train, test, train_class, test_class, k, method
                                    noisetuning = c(0,0), count = FALSE, clustermethod = claraCBI, k=k, seed = 249730)$subsetmean)
   hclust_tsa_stab <- mean(clusterboot(test_meas_tsa, B=B, bootmethod = "subset", subtuning = floor(subset*nrow(test_meas)),
                                       noisetuning = c(0,0), count = FALSE, clustermethod = hclustCBI, 
-                                      method=hclust_method, k=k, seed = 249730)$subsetmean)
+                                      method=hclust_method, k=k, scaling=FALSE, seed = 249730)$subsetmean)
   
   #tabelka
   wskazniki_eucl_tsa <- c(kmean_eucl_tsa_acc, kmean_eucl_conn_tsa, kmean_eucl_silh_tsa, kmean_tsa_stab,
                           pam_eucl_tsa_acc, pam_eucl_conn_tsa, pam_eucl_silh_tsa, pam_tsa_stab,
                           hclust_eucl_tsa_acc, hclust_eucl_conn_tsa, hclust_eucl_silh_tsa, hclust_tsa_stab,
                           som_tsa_acc, som_tsa_conn, som_tsa_silh, NA)
-
   table_eucl_tsa_method <- as.data.frame(matrix(wskazniki_eucl_tsa, nrow = 4, ncol = 4, byrow = TRUE))
   colnames(table_eucl_tsa_method) <- c("Accuracy", "Connectivity", "Silhouette", "Stability")
   rownames(table_eucl_tsa_method) <- c("Kmeans", "PAM", "Hclust", "SOM")
@@ -449,7 +443,7 @@ Procedura_grupowania <- function(train, test, train_class, test_class, k, method
   #grupowanie po ekstrakcji cech wylacznie na cechach po stepclass
   eucl_dist_sc_matrix <- dist(test_meas_sc, diag = TRUE, upper = TRUE)
   #
-  kmean_eucl_sc <- kmeans(test_meas_sc, centers = k)
+  kmean_eucl_sc <- kmeans(test_meas_sc, centers = k, nstart = nstart)
   pam_eucl_sc <- pam(eucl_dist_sc_matrix, k = k, metric = "euclidean")
   hclust_eucl_sc <- hclust(eucl_dist_sc_matrix, method = hclust_method)
   hclust_eucl_sc_clust <- cutree(hclust_eucl_sc, k=k)
@@ -465,8 +459,6 @@ Procedura_grupowania <- function(train, test, train_class, test_class, k, method
   som_tab_sc_permut <- matchClasses(som_tab_sc, method = "exact", verbose = FALSE)
   which.na <- c(attr(na.omit(as.integer(som_pred_sc$predictions[["class"]])),"na.action"))
   l <- length(which.na)
-  print(which.na)
-  print(l)
   #ocena metod opartych na ekstrakcji cech (stepclass)
   #accuracy
   kmean_eucl_sc_acc <- compareMatchedClasses(kmean_eucl_sc$cluster, test_class, method = "exact", verbose = FALSE)$diag
@@ -507,7 +499,7 @@ Procedura_grupowania <- function(train, test, train_class, test_class, k, method
                                    noisetuning = c(0,0), count = FALSE, clustermethod = claraCBI, k=k, seed = 249730)$subsetmean)
   hclust_sc_stab <- mean(clusterboot(test_meas_sc, B=B, bootmethod = "subset", subtuning = floor(subset*nrow(test_meas)),
                                       noisetuning = c(0,0), count = FALSE, clustermethod = hclustCBI, 
-                                      method=hclust_method, k=k, seed = 249730)$subsetmean)
+                                      method=hclust_method, k=k, scaling=FALSE, seed = 249730)$subsetmean)
   
   #tabelka
   wskazniki_eucl_sc <- c(kmean_eucl_sc_acc, kmean_eucl_conn_sc, kmean_eucl_silh_sc, kmean_sc_stab,
@@ -536,7 +528,7 @@ Procedura_grupowania <- function(train, test, train_class, test_class, k, method
   #grupowanie po ekstrakcji cech wylacznie na cechach po forward search
   eucl_dist_fs_matrix <- dist(test_meas_fs, diag = TRUE, upper = TRUE)
   #
-  kmean_eucl_fs <- kmeans(test_meas_fs, centers = k)
+  kmean_eucl_fs <- kmeans(test_meas_fs, centers = k, nstart = nstart)
   pam_eucl_fs <- pam(eucl_dist_fs_matrix, k = k, metric = "euclidean")
   hclust_eucl_fs <- hclust(eucl_dist_fs_matrix, method = hclust_method)
   hclust_eucl_fs_clust <- cutree(hclust_eucl_fs, k=k)
@@ -552,9 +544,7 @@ Procedura_grupowania <- function(train, test, train_class, test_class, k, method
   som_tab_fs_permut <- matchClasses(som_tab_fs, method = "exact", verbose = FALSE)
   which.na <- c(attr(na.omit(as.integer(som_pred_fs$predictions[["class"]])),"na.action"))
   l <- length(which.na)
-  print(which.na)
-  print(l)
-  #ocena metod opartych na ekstrakcji cech (unsupervised forward search)
+  #ocena metod opartych na ekstrakcji cech (stepclass)
   #accuracy
   kmean_eucl_fs_acc <- compareMatchedClasses(kmean_eucl_fs$cluster, test_class, method = "exact", verbose = FALSE)$diag
   pam_eucl_fs_acc <- compareMatchedClasses(pam_eucl_fs$clustering, test_class, method = "exact", verbose = FALSE)$diag
@@ -594,7 +584,7 @@ Procedura_grupowania <- function(train, test, train_class, test_class, k, method
                                   noisetuning = c(0,0), count = FALSE, clustermethod = claraCBI, k=k, seed = 249730)$subsetmean)
   hclust_fs_stab <- mean(clusterboot(test_meas_fs, B=B, bootmethod = "subset", subtuning = floor(subset*nrow(test_meas)),
                                      noisetuning = c(0,0), count = FALSE, clustermethod = hclustCBI, 
-                                     method=hclust_method, k=k, seed = 249730)$subsetmean)
+                                     method=hclust_method, k=k, scaling=FALSE, seed = 249730)$subsetmean)
   
   #tabelka
   wskazniki_eucl_fs <- c(kmean_eucl_fs_acc, kmean_eucl_conn_fs, kmean_eucl_silh_fs, kmean_fs_stab,
@@ -606,17 +596,17 @@ Procedura_grupowania <- function(train, test, train_class, test_class, k, method
   rownames(table_eucl_fs_method) <- c("Kmeans", "PAM", "Hclust", "SOM")
   
   #grupowanie stosując składowe głowne z metody PCA
-  train_comp_model <- prcomp(train_meas, scale. = TRUE)
   test_comp_model <- prcomp(test_meas, scale. = TRUE)
+  train_comp_model <- predict(test_comp_model, train_meas)
   var_explained <- cumsum(test_comp_model$sdev^2) / sum(test_comp_model$sdev^2)
   n_components <- sum(var_explained >= min_var)
   n_components <- ncol(test_meas) + 1 - n_components
-  train_meas_comp <- train_comp_model$x[,1:n_components]
+  train_meas_comp <- train_comp_model[,1:n_components]
   test_meas_comp <- test_comp_model$x[,1:n_components]
   #grupowanie po ekstrakcji cech na składowych głownych (pca)
   eucl_dist_comp_matrix <- dist(test_meas_comp, diag = TRUE, upper = TRUE)
   #
-  kmean_eucl_comp <- kmeans(test_meas_comp, centers = k)
+  kmean_eucl_comp <- kmeans(test_meas_comp, centers = k, nstart = nstart)
   pam_eucl_comp <- pam(eucl_dist_comp_matrix, k = k, metric = "euclidean")
   hclust_eucl_comp <- hclust(eucl_dist_comp_matrix, method = hclust_method)
   hclust_eucl_comp_clust <- cutree(hclust_eucl_comp, k=k)
@@ -632,9 +622,7 @@ Procedura_grupowania <- function(train, test, train_class, test_class, k, method
   som_tab_comp_permut <- matchClasses(som_tab_comp, method = "exact", verbose = FALSE)
   which.na <- c(attr(na.omit(as.integer(som_pred_comp$predictions[["class"]])),"na.action"))
   l <- length(which.na)
-  print(which.na)
-  print(l)
-  #ocena metod opartych na składowych głównych PCA
+  #ocena metod opartych na ekstrakcji cech (forward search - unsupervised)
   #accuracy
   kmean_eucl_comp_acc <- compareMatchedClasses(kmean_eucl_comp$cluster, test_class, method = "exact", verbose = FALSE)$diag
   pam_eucl_comp_acc <- compareMatchedClasses(pam_eucl_comp$clustering, test_class, method = "exact", verbose = FALSE)$diag
@@ -674,7 +662,7 @@ Procedura_grupowania <- function(train, test, train_class, test_class, k, method
                                   noisetuning = c(0,0), count = FALSE, clustermethod = claraCBI, k=k, seed = 249730)$subsetmean)
   hclust_comp_stab <- mean(clusterboot(test_meas_comp, B=B, bootmethod = "subset", subtuning = floor(subset*nrow(test_meas)),
                                      noisetuning = c(0,0), count = FALSE, clustermethod = hclustCBI, 
-                                     method=hclust_method, k=k, seed = 249730)$subsetmean)
+                                     method=hclust_method, k=k, scaling=FALSE, seed = 249730)$subsetmean)
   
   #tabelka
   wskazniki_eucl_comp <- c(kmean_eucl_comp_acc, kmean_eucl_conn_comp, kmean_eucl_silh_comp, kmean_comp_stab,
@@ -693,6 +681,18 @@ Procedura_grupowania <- function(train, test, train_class, test_class, k, method
               tsa = table_eucl_tsa_method,
               sc = list(table=table_eucl_sc_method, names_sc = names_sc),
               fs = list(table=table_eucl_fs_method, names_fs = names_fs),
-              comp = list(table=table_eucl_comp_method, n_components = n_components)))
+              comp = list(table=table_eucl_comp_method, n_components = n_components),
+              
+              kmeans=list(eucl=kmean_eucl_ref,char=kmean_eucl_char,pca=kmean_eucl_pca,
+                          raw=kmean_eucl_raw,tsa=kmean_eucl_tsa,sc=kmean_eucl_sc,
+                          fs=kmean_eucl_fs,comp=kmean_eucl_comp),
+              pam=list(eucl=pam_eucl_ref,acf=pam_acf_ref,char=pam_eucl_char,pca=pam_eucl_pca,
+                          raw=pam_eucl_raw,tsa=pam_eucl_tsa,sc=pam_eucl_sc,
+                          fs=pam_eucl_fs,comp=pam_eucl_comp),
+              hclust=list(eucl=hclust_eucl_ref_clust,acf=hclust_acf_ref_clust,char=hclust_eucl_char_clust,pca=hclust_eucl_pca_clust,
+                       raw=hclust_eucl_raw_clust,tsa=hclust_eucl_tsa_clust,sc=hclust_eucl_sc_clust,
+                       fs=hclust_eucl_fs_clust,comp=hclust_eucl_comp_clust),
+              som=list(eucl=som_pred_ref,char=som_pred_char,pca=som_pred_pca,
+                          raw=som_pred_raw,tsa=som_pred_tsa,sc=som_pred_sc,
+                          fs=som_pred_fs,comp=som_pred_comp)))
 }
-
